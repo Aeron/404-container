@@ -1,0 +1,17 @@
+[package]
+name = "http-404"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+async-std = { version = "1.12", features = ["attributes"] }
+async-signals = { version = "0.4" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[[bin]]
+name = "http-404"
+path = "src/main.rs"
