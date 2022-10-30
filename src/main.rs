@@ -20,7 +20,7 @@ async fn main() {
         }
     });
 
-    let addr = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 8080);
+    let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8080);
 
     let listener = match TcpListener::bind(addr).await {
         Ok(listener) => {
