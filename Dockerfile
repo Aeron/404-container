@@ -4,6 +4,7 @@ FROM docker.io/library/rust:bullseye AS build-env
 WORKDIR /usr/src/app
 COPY . .
 
+ENV CARGO_NET_GIT_FETCH_WITH_CLI true
 ENV RUSTFLAGS '-C target-feature=+crt-static'
 
 # Static linking requires to specify a target explicitly
