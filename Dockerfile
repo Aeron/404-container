@@ -16,6 +16,8 @@ RUN cargo build \
 ### Runtime stage ###
 FROM scratch
 
+LABEL org.opencontainers.image.source https://github.com/aeron/404-container
+
 COPY --from=build-env /usr/src/app/target/*/release/http-404 .
 
 EXPOSE 8080/tcp
