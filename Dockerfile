@@ -17,6 +17,7 @@ RUN cargo build \
 FROM scratch
 
 LABEL org.opencontainers.image.source https://github.com/aeron/404-container
+LABEL org.opencontainers.image.licenses ISC
 
 COPY --from=build-env /usr/src/app/target/*/release/http-404 .
 
