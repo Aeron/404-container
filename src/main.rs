@@ -6,7 +6,7 @@ use async_std::net::TcpListener;
 use async_std::prelude::*;
 use async_std::task;
 
-const MSG404: &str = "HTTP/1.1 404 Not Found\r\n";
+const MSG404: &str = "HTTP/1.1 404 Not Found\r\n\r\n";
 
 #[async_std::main]
 async fn main() {
