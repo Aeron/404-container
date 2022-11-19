@@ -21,6 +21,7 @@ LABEL org.opencontainers.image.licenses ISC
 
 COPY --from=build-env /usr/src/app/target/*/release/http-404 .
 
-EXPOSE 8080/tcp
+ENV PORT 8080
+EXPOSE ${PORT}/tcp
 
 ENTRYPOINT ["/http-404"]

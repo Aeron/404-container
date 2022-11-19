@@ -1,3 +1,4 @@
+use std::env;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use async_signals::Signals;
@@ -103,7 +104,18 @@ async fn main() {
         }
     });
 
-    let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 8080);
+    let port: u16 = match env::var("PORT") {
+        Ok(value) => match value.parse::<u16>() {
+            Ok(port) => port,
+            Err(_) => {
+                eprintln!("Invalid port; Quitting");
+                std::process::exit(1);
+            }
+        },
+        Err(_) => 8080,
+    };
+
+    let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port);
 
     let listener = match TcpListener::bind(addr).await {
         Ok(listener) => {

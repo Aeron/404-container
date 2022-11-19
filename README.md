@@ -44,5 +44,16 @@ docker -d --restart unless-stopped --name http-404 \
 
 By default, the containerized app listens on the `0.0.0.0:8080` address.
 
+However, you can also provide the `PORT` environment variable with a desired port
+number value. Just like so:
+
+```sh
+docker -d --restart unless-stopped --name http-404 \
+    --user=65534 \
+    -e PORT=1080
+    -p 80/1080:tcp \
+    docker.io/aeron/404
+```
+
 Don’t forget about the unprivileged user trick. The container itself won’t enforce
 any specific UID.
