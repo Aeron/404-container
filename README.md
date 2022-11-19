@@ -50,7 +50,7 @@ number value. Just like so:
 ```sh
 docker -d --restart unless-stopped --name http-404 \
     --user=65534 \
-    -e PORT=1080
+    -e PORT=1080 \
     -p 80/1080:tcp \
     docker.io/aeron/404
 ```
