@@ -2,7 +2,7 @@ use std::env;
 use std::net::{Ipv4Addr, SocketAddrV4};
 
 use async_signals::Signals;
-use async_std::io::{Error, ErrorKind, Result};
+use async_std::io::ErrorKind;
 use async_std::net::{TcpListener, TcpStream};
 use async_std::prelude::*;
 use async_std::task;
@@ -40,40 +40,33 @@ impl HTTPMessage {
 }
 
 /// Extracts the first line of a message if anything is there.
-async fn extract(mut stream: &TcpStream) -> Result<Vec<u8>> {
+async fn extract(mut stream: &TcpStream) -> Vec<u8> {
     let mut request: Vec<u8> = Vec::with_capacity(REQUEST_CAP);
     let mut buf = [0 as u8; BUFFER_LENGTH];
 
     loop {
-        let mut size = stream.read(&mut buf).await?;
+        match stream.read(&mut buf).await {
+            Ok(mut size) if size > 0 => {
+                if let Some(pos) = buf.iter().position(|i| i == &CRLF[0]) {
+                    size = pos;
+                }
 
-        if size > 0 {
-            if let Some(pos) = buf.iter().position(|i| i == &CRLF[0]) {
-                size = pos;
+                if request.len() + size > REQUEST_CAP {
+                    size = REQUEST_CAP - request.len();
+                }
+
+                request.extend(&buf[0..size]);
+
+                if size < BUFFER_LENGTH {
+                    break;
+                }
             }
-
-            if request.len() + size > REQUEST_CAP {
-                size = REQUEST_CAP - request.len();
-            }
-
-            request.extend(&buf[0..size]);
-
-            if size < BUFFER_LENGTH {
-                break;
-            }
-        } else {
-            break;
+            Ok(_) => break,
+            Err(_) => break,
         }
     }
 
-    if !request.is_empty() {
-        if request.is_ascii() {
-            return Ok(request);
-        }
-        return Err(Error::new(ErrorKind::InvalidData, "Non-ASCII HTTP message"));
-    }
-
-    Err(Error::new(ErrorKind::InvalidData, "Empty HTTP message"))
+    request
 }
 
 // TODO: a From trait implementation maybe?
@@ -143,27 +136,24 @@ async fn main() {
             response.extend("HTTP/1.1".as_bytes());
             response.extend(b" ");
 
-            // TODO: do we want to handle errors here or remove them altogether?
-            if let Some(data) = extract(&stream).await.ok() {
+            let data = extract(&stream).await;
+
+            if !data.is_empty() && data.is_ascii() {
                 let message = parse(&data).await;
 
                 if !message.is_method_valid() {
-                    response.extend("405 Method Not Allowed".as_bytes());
+                    response.extend(b"405 Method Not Allowed");
                 } else if message.path.is_empty() || message.http.is_empty() {
-                    response.extend("414 URI Too Long".as_bytes());
+                    response.extend(b"414 URI Too Long");
                 } else if !message.is_http_valid() {
-                    response.extend("505 HTTP Version Not Supported".as_bytes());
+                    response.extend(b"505 HTTP Version Not Supported");
                 } else if message.path == b"/healthz" {
-                    // TODO: do we care about the method here?
-                    response.extend("200 OK".as_bytes()); // I would prefer 204 though
+                    response.extend(b"200 OK"); // I would prefer 204 though
                 } else {
-                    response.extend("404 Not Found".as_bytes());
+                    response.extend(b"404 Not Found");
                 }
-            }
-
-            // TODO: not very elegant but will do for now
-            if response.len() == 9 {
-                response.extend("400 Bad Request".as_bytes());
+            } else {
+                response.extend(b"400 Bad Request");
             }
 
             response.extend(CRLF);
