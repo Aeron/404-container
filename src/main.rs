@@ -74,14 +74,12 @@ async fn extract(mut stream: &TcpStream) -> Vec<u8> {
 async fn parse(data: &Vec<u8>) -> HTTPMessage {
     let mut result: Vec<&[u8]> = Vec::with_capacity(3);
 
-    for value in data.splitn(3, |i| i == &b' ').into_iter() {
-        result.push(value);
-    }
+    data.splitn(3, |i| i == &b' ').for_each(|v| result.push(v));
 
     HTTPMessage {
-        method: result[0].to_vec(),
-        path: result[1].to_vec(),
-        http: result[2].to_vec(),
+        method: result.get(0).map_or(vec![], |v| v.to_vec()),
+        path: result.get(1).map_or(vec![], |v| v.to_vec()),
+        http: result.get(2).map_or(vec![], |v| v.to_vec()),
     }
 }
 
@@ -167,5 +165,48 @@ async fn main() {
 
             stream.flush().await.ok();
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::any::{Any, TypeId};
+
+    use super::*;
+
+    #[async_std::test]
+    async fn test_parse() {
+        let data = b"GET /test HTTP/1.1".to_vec();
+
+        let result = parse(&data).await;
+
+        assert!(result.type_id() == TypeId::of::<HTTPMessage>());
+        assert!(result.method.as_slice() == b"GET");
+        assert!(result.path.as_slice() == b"/test");
+        assert!(result.http.as_slice() == b"HTTP/1.1");
+    }
+
+    #[async_std::test]
+    async fn test_parse_with_invalid_http() {
+        let data = b"GET /too-long-message".to_vec();
+
+        let result = parse(&data).await;
+
+        assert!(result.type_id() == TypeId::of::<HTTPMessage>());
+        assert!(result.method.as_slice() == b"GET");
+        assert!(result.path.as_slice() == b"/too-long-message");
+        assert!(result.http.is_empty());
+    }
+
+    #[async_std::test]
+    async fn test_parse_with_invalid_path() {
+        let data = b"GET".to_vec();
+
+        let result = parse(&data).await;
+
+        assert!(result.type_id() == TypeId::of::<HTTPMessage>());
+        assert!(result.method.as_slice() == b"GET");
+        assert!(result.path.is_empty());
+        assert!(result.http.is_empty());
     }
 }
