@@ -14,26 +14,30 @@ const SEP: u8 = 32;
 
 const BUFFER_LENGTH: usize = 16;
 const REQUEST_CAP: usize = BUFFER_LENGTH * 4096; // 65536 should be enough
-const RESPONSE_CAP: usize = 30 + CRLF.len() * 2;
 
-const VERSIONS: [Bytes; 3] = [b"HTTP/1.0", b"HTTP/1.1", b"HTTP/2"];
-const METHODS: [Bytes; 8] = [
+const VERSIONS: [BytesSlice; 3] = [b"HTTP/1.0", b"HTTP/1.1", b"HTTP/2"];
+const METHODS: [BytesSlice; 8] = [
     b"GET", b"HEAD", b"POST", b"PUT", b"DELETE", b"OPTIONS", b"PATCH", b"TRACE",
 ];
 
 /// The slice of bytes type.
 ///
 /// It is a covenient alias for `&[u8]`.
-type Bytes<'a> = &'a [u8];
+type BytesSlice<'a> = &'a [u8];
+
+/// The vector of bytes type.
+///
+/// It is a covenient alias for `Vec<u8>`.
+type BytesVec = Vec<u8>;
 
 /// Represents a simplified HTTP (request) message.
-struct HTTPMessage {
-    method: Vec<u8>,
-    path: Vec<u8>,
-    http: Vec<u8>,
+struct HTTPRequestMessage {
+    method: BytesVec,
+    path: BytesVec,
+    http: BytesVec,
 }
 
-impl HTTPMessage {
+impl HTTPRequestMessage {
     /// Creates a new and empty HTTPMessage.
     fn new() -> Self {
         let meth_cap = max_len(METHODS.to_vec());
@@ -64,10 +68,10 @@ impl HTTPMessage {
     }
 }
 
-impl Index<usize> for HTTPMessage {
-    type Output = Vec<u8>;
+impl Index<usize> for HTTPRequestMessage {
+    type Output = BytesVec;
 
-    fn index(&self, index: usize) -> &Vec<u8> {
+    fn index(&self, index: usize) -> &BytesVec {
         match index {
             0 => &self.method,
             1 => &self.path,
@@ -77,8 +81,8 @@ impl Index<usize> for HTTPMessage {
     }
 }
 
-impl IndexMut<usize> for HTTPMessage {
-    fn index_mut(&mut self, index: usize) -> &mut Vec<u8> {
+impl IndexMut<usize> for HTTPRequestMessage {
+    fn index_mut(&mut self, index: usize) -> &mut BytesVec {
         match index {
             0 => &mut self.method,
             1 => &mut self.path,
@@ -88,9 +92,9 @@ impl IndexMut<usize> for HTTPMessage {
     }
 }
 
-impl From<&Vec<u8>> for HTTPMessage {
-    fn from(data: &Vec<u8>) -> Self {
-        let mut result = HTTPMessage::new();
+impl From<&BytesVec> for HTTPRequestMessage {
+    fn from(data: &BytesVec) -> Self {
+        let mut result = HTTPRequestMessage::new();
 
         for (i, v) in data.splitn(3, |i| i == &SEP).enumerate() {
             result[i].extend_from_slice(v);
@@ -100,15 +104,49 @@ impl From<&Vec<u8>> for HTTPMessage {
     }
 }
 
+struct HTTPResponseMessage<'a, 'b> {
+    http: BytesSlice<'a>,
+    code: u16,
+    desc: BytesSlice<'b>,
+}
+
+impl<'a, 'b> HTTPResponseMessage<'a, 'b> {
+    fn new() -> Self {
+        Self {
+            http: VERSIONS[1],
+            code: 404,
+            desc: b"Not Found",
+        }
+    }
+
+    fn status(&mut self, code: u16, desc: BytesSlice<'b>) {
+        self.code = code;
+        self.desc = desc;
+    }
+
+    fn to_vec(&self) -> BytesVec {
+        [
+            self.http,
+            &[SEP],
+            self.code.to_string().as_bytes(),
+            &[SEP],
+            self.desc,
+            &CRLF,
+            &CRLF,
+        ]
+        .concat()
+    }
+}
+
 // HACK: because constant unwrap methods are unstable yet
 /// Returns the maximum length of bytes in a given sequence.
-fn max_len(arr: Vec<Bytes>) -> usize {
+fn max_len(arr: Vec<BytesSlice>) -> usize {
     arr.iter().map(|i| i.len()).max().unwrap_or_default()
 }
 
 /// Extracts the first line of a message if anything is there.
-async fn extract(mut stream: &TcpStream) -> Vec<u8> {
-    let mut request: Vec<u8> = Vec::with_capacity(REQUEST_CAP);
+async fn extract(mut stream: &TcpStream) -> BytesVec {
+    let mut request: BytesVec = Vec::with_capacity(REQUEST_CAP);
     let mut buf = [0 as u8; BUFFER_LENGTH];
 
     loop {
@@ -182,35 +220,27 @@ async fn main() {
         stream.set_nodelay(true).ok(); // we do not really care if it clicks or not
 
         task::spawn(async move {
-            let mut response: Vec<u8> = Vec::with_capacity(RESPONSE_CAP);
-
-            response.extend("HTTP/1.1".as_bytes());
-            response.extend(b" ");
+            let mut response = HTTPResponseMessage::new();
 
             let data = extract(&stream).await;
 
             if !data.is_empty() && data.is_ascii() {
-                let message = HTTPMessage::from(&data);
+                let message = HTTPRequestMessage::from(&data);
 
                 if !message.is_method_valid() {
-                    response.extend(b"405 Method Not Allowed");
+                    response.status(405, b"Method Not Allowed");
                 } else if message.path.is_empty() || message.http.is_empty() {
-                    response.extend(b"414 URI Too Long");
+                    response.status(414, b"URI Too Long");
                 } else if !message.is_http_valid() {
-                    response.extend(b"505 HTTP Version Not Supported");
+                    response.status(505, b"HTTP Version Not Supported");
                 } else if message.path == b"/healthz" {
-                    response.extend(b"200 OK"); // I would prefer 204 though
-                } else {
-                    response.extend(b"404 Not Found");
+                    response.status(200, b"OK"); // I would prefer 204 though
                 }
             } else {
-                response.extend(b"400 Bad Request");
+                response.status(400, b"Bad Request");
             }
 
-            response.extend(CRLF);
-            response.extend(CRLF);
-
-            if let Some(e) = stream.write_all(response.as_slice()).await.err() {
+            if let Some(e) = stream.write_all(response.to_vec().as_slice()).await.err() {
                 if e.kind() != ErrorKind::WouldBlock {
                     return;
                 }
@@ -231,9 +261,9 @@ mod tests {
     fn test_http_message_from() {
         let data = b"GET /test HTTP/1.1".to_vec();
 
-        let result = HTTPMessage::from(&data);
+        let result = HTTPRequestMessage::from(&data);
 
-        assert!(result.type_id() == TypeId::of::<HTTPMessage>());
+        assert!(result.type_id() == TypeId::of::<HTTPRequestMessage>());
         assert!(result.method.as_slice() == b"GET");
         assert!(result.path.as_slice() == b"/test");
         assert!(result.http.as_slice() == b"HTTP/1.1");
@@ -243,9 +273,9 @@ mod tests {
     fn test_http_message_from_with_empty_http() {
         let data = b"GET /too-long-message".to_vec();
 
-        let result = HTTPMessage::from(&data);
+        let result = HTTPRequestMessage::from(&data);
 
-        assert!(result.type_id() == TypeId::of::<HTTPMessage>());
+        assert!(result.type_id() == TypeId::of::<HTTPRequestMessage>());
         assert!(result.method.as_slice() == b"GET");
         assert!(result.path.as_slice() == b"/too-long-message");
         assert!(result.http.is_empty());
@@ -255,9 +285,9 @@ mod tests {
     fn test_http_message_from_with_empty_path() {
         let data = b"GET".to_vec();
 
-        let result = HTTPMessage::from(&data);
+        let result = HTTPRequestMessage::from(&data);
 
-        assert!(result.type_id() == TypeId::of::<HTTPMessage>());
+        assert!(result.type_id() == TypeId::of::<HTTPRequestMessage>());
         assert!(result.method.as_slice() == b"GET");
         assert!(result.path.is_empty());
         assert!(result.http.is_empty());
