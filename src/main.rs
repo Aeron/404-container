@@ -40,8 +40,8 @@ struct HTTPRequestMessage {
 impl HTTPRequestMessage {
     /// Creates a new and empty HTTPMessage.
     fn new() -> Self {
-        let meth_cap = max_len(METHODS.to_vec());
-        let vers_cap = max_len(VERSIONS.to_vec());
+        let meth_cap = max_len(&METHODS.to_vec());
+        let vers_cap = max_len(&VERSIONS.to_vec());
         let path_cap = REQUEST_CAP - meth_cap - vers_cap;
 
         Self {
@@ -108,6 +108,7 @@ struct HTTPResponseMessage<'a, 'b> {
     http: BytesSlice<'a>,
     code: u16,
     desc: BytesSlice<'b>,
+    headers: Vec<BytesSlice<'b>>,
 }
 
 impl<'a, 'b> HTTPResponseMessage<'a, 'b> {
@@ -116,6 +117,7 @@ impl<'a, 'b> HTTPResponseMessage<'a, 'b> {
             http: VERSIONS[1],
             code: 404,
             desc: b"Not Found",
+            headers: vec![b"Connection: close"],
         }
     }
 
@@ -132,6 +134,8 @@ impl<'a, 'b> HTTPResponseMessage<'a, 'b> {
             &[SEP],
             self.desc,
             &CRLF,
+            self.headers.join(&CRLF[..]).as_slice(),
+            &CRLF,
             &CRLF,
         ]
         .concat()
@@ -140,8 +144,8 @@ impl<'a, 'b> HTTPResponseMessage<'a, 'b> {
 
 // HACK: because constant unwrap methods are unstable yet
 /// Returns the maximum length of bytes in a given sequence.
-fn max_len(arr: Vec<BytesSlice>) -> usize {
-    arr.iter().map(|i| i.len()).max().unwrap_or_default()
+fn max_len(seq: &Vec<BytesSlice>) -> usize {
+    seq.iter().map(|i| i.len()).max().unwrap_or_default()
 }
 
 /// Extracts the first line of a message if anything is there.
@@ -258,7 +262,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_http_message_from() {
+    fn test_http_request_message_from() {
         let data = b"GET /test HTTP/1.1".to_vec();
 
         let result = HTTPRequestMessage::from(&data);
@@ -270,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn test_http_message_from_with_empty_http() {
+    fn test_http_request_message_from_with_empty_http() {
         let data = b"GET /too-long-message".to_vec();
 
         let result = HTTPRequestMessage::from(&data);
@@ -282,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn test_http_message_from_with_empty_path() {
+    fn test_http_request_message_from_with_empty_path() {
         let data = b"GET".to_vec();
 
         let result = HTTPRequestMessage::from(&data);
@@ -291,5 +295,50 @@ mod tests {
         assert!(result.method.as_slice() == b"GET");
         assert!(result.path.is_empty());
         assert!(result.http.is_empty());
+    }
+
+    #[test]
+    fn test_http_response_message_new() {
+        let result = HTTPResponseMessage::new();
+
+        assert!(result.type_id() == TypeId::of::<HTTPResponseMessage>());
+        assert!(result.http == b"HTTP/1.1");
+        assert!(result.code == 404);
+        assert!(result.desc == b"Not Found");
+        assert!(result.headers[0] == b"Connection: close");
+    }
+
+    #[test]
+    fn test_http_response_message_status() {
+        let mut result = HTTPResponseMessage::new();
+
+        result.status(204, b"No Content");
+
+        assert!(result.type_id() == TypeId::of::<HTTPResponseMessage>());
+        assert!(result.http == b"HTTP/1.1");
+        assert!(result.code == 204);
+        assert!(result.desc == b"No Content");
+        assert!(result.headers[0] == b"Connection: close");
+    }
+
+    #[test]
+    fn test_http_response_message_to_vec() {
+        let msg = HTTPResponseMessage::new();
+
+        let result = msg.to_vec();
+        let expect = b"HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
+
+        assert!(result.type_id() == TypeId::of::<Vec<u8>>());
+        assert!(result.len() == expect.len());
+        assert!(result.as_slice() == expect);
+    }
+
+    #[test]
+    fn test_max_len() {
+        let seq: Vec<&[u8]> = vec![b"ABC", b"AB", b"A"];
+
+        let result = max_len(&seq);
+
+        assert!(result == seq[0].len());
     }
 }
