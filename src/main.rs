@@ -7,10 +7,24 @@ use async_std::net::{TcpListener, TcpStream};
 use async_std::prelude::*;
 use async_std::task;
 
-const CRLF: [u8; 2] = [13, 10]; // simply \r\n
+use std::ops::{Index, IndexMut};
+
+const CRLF: [u8; 2] = [13, 10];
+const SEP: u8 = 32;
+
 const BUFFER_LENGTH: usize = 16;
 const REQUEST_CAP: usize = BUFFER_LENGTH * 4096; // 65536 should be enough
 const RESPONSE_CAP: usize = 30 + CRLF.len() * 2;
+
+const VERSIONS: [Bytes; 3] = [b"HTTP/1.0", b"HTTP/1.1", b"HTTP/2"];
+const METHODS: [Bytes; 8] = [
+    b"GET", b"HEAD", b"POST", b"PUT", b"DELETE", b"OPTIONS", b"PATCH", b"TRACE",
+];
+
+/// The slice of bytes type.
+///
+/// It is a covenient alias for `&[u8]`.
+type Bytes<'a> = &'a [u8];
 
 /// Represents a simplified HTTP (request) message.
 struct HTTPMessage {
@@ -20,12 +34,23 @@ struct HTTPMessage {
 }
 
 impl HTTPMessage {
+    /// Creates a new and empty HTTPMessage.
+    fn new() -> Self {
+        let meth_cap = max_len(METHODS.to_vec());
+        let vers_cap = max_len(VERSIONS.to_vec());
+        let path_cap = REQUEST_CAP - meth_cap - vers_cap;
+
+        Self {
+            method: Vec::with_capacity(meth_cap),
+            path: Vec::with_capacity(path_cap),
+            http: Vec::with_capacity(vers_cap),
+        }
+    }
+
     /// Checks if the method is supported.
     fn is_method_valid(&self) -> bool {
         match self.method.as_slice() {
-            b"GET" | b"HEAD" | b"POST" | b"PUT" | b"DELETE" | b"OPTIONS" | b"PATCH" | b"TRACE" => {
-                true
-            }
+            m if METHODS.contains(&m) => true,
             _ => false,
         }
     }
@@ -33,10 +58,52 @@ impl HTTPMessage {
     /// Checks if the HTTP version is supported.
     fn is_http_valid(&self) -> bool {
         match self.http.as_slice() {
-            b"HTTP/1.0" | b"HTTP/1.1" | b"HTTP/2" => true,
+            v if VERSIONS.contains(&v) => true,
             _ => false,
         }
     }
+}
+
+impl Index<usize> for HTTPMessage {
+    type Output = Vec<u8>;
+
+    fn index(&self, index: usize) -> &Vec<u8> {
+        match index {
+            0 => &self.method,
+            1 => &self.path,
+            2 => &self.http,
+            _ => panic!("invalid index {index}"),
+        }
+    }
+}
+
+impl IndexMut<usize> for HTTPMessage {
+    fn index_mut(&mut self, index: usize) -> &mut Vec<u8> {
+        match index {
+            0 => &mut self.method,
+            1 => &mut self.path,
+            2 => &mut self.http,
+            _ => panic!("invalid index {index}"),
+        }
+    }
+}
+
+impl From<&Vec<u8>> for HTTPMessage {
+    fn from(data: &Vec<u8>) -> Self {
+        let mut result = HTTPMessage::new();
+
+        for (i, v) in data.splitn(3, |i| i == &SEP).enumerate() {
+            result[i].extend_from_slice(v);
+        }
+
+        result
+    }
+}
+
+// HACK: because constant unwrap methods are unstable yet
+/// Returns the maximum length of bytes in a given sequence.
+fn max_len(arr: Vec<Bytes>) -> usize {
+    arr.iter().map(|i| i.len()).max().unwrap_or_default()
 }
 
 /// Extracts the first line of a message if anything is there.
@@ -67,20 +134,6 @@ async fn extract(mut stream: &TcpStream) -> Vec<u8> {
     }
 
     request
-}
-
-// TODO: a From trait implementation maybe?
-/// Parses a given data into an HTTP message instance.
-async fn parse(data: &Vec<u8>) -> HTTPMessage {
-    let mut result: Vec<&[u8]> = Vec::with_capacity(3);
-
-    data.splitn(3, |i| i == &b' ').for_each(|v| result.push(v));
-
-    HTTPMessage {
-        method: result.get(0).map_or(vec![], |v| v.to_vec()),
-        path: result.get(1).map_or(vec![], |v| v.to_vec()),
-        http: result.get(2).map_or(vec![], |v| v.to_vec()),
-    }
 }
 
 #[async_std::main]
@@ -137,7 +190,7 @@ async fn main() {
             let data = extract(&stream).await;
 
             if !data.is_empty() && data.is_ascii() {
-                let message = parse(&data).await;
+                let message = HTTPMessage::from(&data);
 
                 if !message.is_method_valid() {
                     response.extend(b"405 Method Not Allowed");
@@ -174,11 +227,11 @@ mod tests {
 
     use super::*;
 
-    #[async_std::test]
-    async fn test_parse() {
+    #[test]
+    fn test_http_message_from() {
         let data = b"GET /test HTTP/1.1".to_vec();
 
-        let result = parse(&data).await;
+        let result = HTTPMessage::from(&data);
 
         assert!(result.type_id() == TypeId::of::<HTTPMessage>());
         assert!(result.method.as_slice() == b"GET");
@@ -186,11 +239,11 @@ mod tests {
         assert!(result.http.as_slice() == b"HTTP/1.1");
     }
 
-    #[async_std::test]
-    async fn test_parse_with_invalid_http() {
+    #[test]
+    fn test_http_message_from_with_empty_http() {
         let data = b"GET /too-long-message".to_vec();
 
-        let result = parse(&data).await;
+        let result = HTTPMessage::from(&data);
 
         assert!(result.type_id() == TypeId::of::<HTTPMessage>());
         assert!(result.method.as_slice() == b"GET");
@@ -198,11 +251,11 @@ mod tests {
         assert!(result.http.is_empty());
     }
 
-    #[async_std::test]
-    async fn test_parse_with_invalid_path() {
+    #[test]
+    fn test_http_message_from_with_empty_path() {
         let data = b"GET".to_vec();
 
-        let result = parse(&data).await;
+        let result = HTTPMessage::from(&data);
 
         assert!(result.type_id() == TypeId::of::<HTTPMessage>());
         assert!(result.method.as_slice() == b"GET");
