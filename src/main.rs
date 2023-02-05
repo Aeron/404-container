@@ -29,7 +29,7 @@ async fn main() {
         // NOTE: SIGHUP = 1, SIGINT = 2, SIGTERM = 15
         let mut signals = Signals::new([1, 2, 15]).unwrap();
 
-        while let Some(_) = signals.next().await {
+        while (signals.next().await).is_some() {
             println!("Quitting");
             std::process::exit(0);
         }

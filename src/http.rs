@@ -35,18 +35,12 @@ impl RequestMessage {
 
     /// Checks if the method is supported.
     pub fn is_method_valid(&self) -> bool {
-        match self.method.as_slice() {
-            m if METHODS.contains(&m) => true,
-            _ => false,
-        }
+        matches!(self.method.as_slice(), m if METHODS.contains(&m))
     }
 
     /// Checks if the HTTP version is supported.
     pub fn is_http_valid(&self) -> bool {
-        match self.http.as_slice() {
-            v if VERSIONS.contains(&v) => true,
-            _ => false,
-        }
+        matches!(self.http.as_slice(), v if VERSIONS.contains(&v))
     }
 }
 

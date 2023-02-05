@@ -10,7 +10,7 @@ const BUFFER_LEN: usize = 16;
 pub async fn extract(mut stream: &TcpStream) -> Vec<u8> {
     // NOTE: simple Vec is more memory-efficient here than SmallVec
     let mut request: Vec<u8> = Vec::with_capacity(REQUEST_CAP);
-    let mut buf = [0 as u8; BUFFER_LEN];
+    let mut buf = [0_u8; BUFFER_LEN];
 
     loop {
         match stream.read(&mut buf).await {
