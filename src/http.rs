@@ -1,35 +1,28 @@
-use smallvec::{SmallVec, ToSmallVec};
-
-use crate::CRLF;
-
-const SEP: u8 = 32;
+use crate::{REQUEST_CAP, SEP};
 
 const VERSIONS: [&[u8]; 3] = [b"HTTP/1.0", b"HTTP/1.1", b"HTTP/2"];
 const METHODS: [&[u8]; 8] = [
     b"GET", b"HEAD", b"POST", b"PUT", b"DELETE", b"OPTIONS", b"PATCH", b"TRACE",
 ];
 
-pub const REQUEST_CAP: usize = 65536;
-const RESPONSE_CAP: usize = 64;
-
 const METHOD_CAP: usize = 7;
 const PATH_CAP: usize = REQUEST_CAP;
 const VERSION_CAP: usize = 8;
 
-/// Represents a simplified HTTP (request) message.
+/// Represents a simplified HTTP request message.
 pub struct RequestMessage {
-    pub method: SmallVec<[u8; METHOD_CAP]>,
-    pub path: SmallVec<[u8; PATH_CAP]>,
-    pub http: SmallVec<[u8; VERSION_CAP]>,
+    pub method: Vec<u8>,
+    pub path: Vec<u8>,
+    pub http: Vec<u8>,
 }
 
 impl RequestMessage {
-    /// Creates a new and empty HTTPRequestMessage.
+    /// Creates a new and empty RequestMessage.
     pub fn new() -> Self {
         Self {
-            method: SmallVec::new(),
-            path: SmallVec::new(),
-            http: SmallVec::new(),
+            method: Vec::with_capacity(METHOD_CAP),
+            path: Vec::with_capacity(PATH_CAP),
+            http: Vec::with_capacity(VERSION_CAP),
         }
     }
 
@@ -54,7 +47,7 @@ impl From<&Vec<u8>> for RequestMessage {
             &value[..]
         };
 
-        for (i, v) in slice.splitn(3, |i| i == &SEP).enumerate() {
+        for (i, v) in slice.splitn(3, |i| i == &SEP[0]).enumerate() {
             match i {
                 0 => result.method.extend_from_slice(v),
                 1 => result.path.extend_from_slice(v),
@@ -76,43 +69,14 @@ pub struct ResponseMessage<'a, 'b> {
 }
 
 impl<'a, 'b> ResponseMessage<'a, 'b> {
-    /// Creates a new HTTPResponseMessage.
-    pub const fn new() -> ResponseMessage<'a, 'b> {
+    /// Creates a new ResponseMessage with a given status code and description.
+    pub const fn with_status(code: u16, desc: &'b [u8]) -> ResponseMessage<'a, 'b> {
         ResponseMessage {
             http: VERSIONS[1],
-            code: 404,
-            desc: b"Not Found",
+            code,
+            desc,
             headers: [b"Connection: close"],
         }
-    }
-
-    /// Creates a new HTTPResponseMessage with a given status code and description.
-    pub const fn with_status(code: u16, desc: &'b [u8]) -> ResponseMessage<'a, 'b> {
-        let mut res = ResponseMessage::new();
-
-        res.code = code;
-        res.desc = desc;
-
-        res
-    }
-}
-
-impl<'a, 'b> ToSmallVec<[u8; RESPONSE_CAP]> for ResponseMessage<'a, 'b> {
-    fn to_smallvec(&self) -> SmallVec<[u8; RESPONSE_CAP]> {
-        SmallVec::from_vec(
-            [
-                self.http,
-                &[SEP],
-                self.code.to_string().as_bytes(),
-                &[SEP],
-                self.desc,
-                &CRLF,
-                self.headers.join(&CRLF[..]).as_slice(),
-                &CRLF,
-                &CRLF,
-            ]
-            .concat(),
-        )
     }
 }
 
@@ -159,17 +123,6 @@ mod tests {
     }
 
     #[test]
-    fn test_response_message_new() {
-        let result = ResponseMessage::new();
-
-        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
-        assert!(result.http == b"HTTP/1.1");
-        assert!(result.code == 404);
-        assert!(result.desc == b"Not Found");
-        assert!(result.headers[0] == b"Connection: close");
-    }
-
-    #[test]
     fn test_response_message_with_status() {
         let result = ResponseMessage::with_status(204, b"No Content");
 
@@ -178,17 +131,5 @@ mod tests {
         assert!(result.code == 204);
         assert!(result.desc == b"No Content");
         assert!(result.headers[0] == b"Connection: close");
-    }
-
-    #[test]
-    fn test_response_message_to_smallvec() {
-        let msg = ResponseMessage::new();
-
-        let result = msg.to_smallvec();
-        let expect = b"HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
-
-        assert!(result.type_id() == TypeId::of::<SmallVec<[u8; RESPONSE_CAP]>>());
-        assert!(result.len() == expect.len());
-        assert!(result.as_slice() == expect);
     }
 }
