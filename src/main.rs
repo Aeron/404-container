@@ -1,7 +1,7 @@
 mod http;
 
 use std::env;
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::net::{Ipv4Addr, Shutdown, SocketAddrV4};
 
 use async_signals::Signals;
 use async_std::io::{ErrorKind, ReadExt, WriteExt};
@@ -86,6 +86,7 @@ async fn process(mut stream: TcpStream) {
     }
 
     stream.flush().await.ok();
+    stream.shutdown(Shutdown::Both).ok();
 }
 
 #[async_std::main]
