@@ -13,6 +13,12 @@ const VERSION_CAP: usize = 8;
 const METHOD_CAP: usize = 7;
 const PATH_CAP: usize = REQUEST_CAP - VERSION_CAP - METHOD_CAP - 2;
 
+const RESP_200: ResponseMessage = ResponseMessage::with_status(200, b"OK");
+const RESP_400: ResponseMessage = ResponseMessage::with_status(400, b"Bad Request");
+const RESP_404: ResponseMessage = ResponseMessage::with_status(404, b"Not Found");
+const RESP_405: ResponseMessage = ResponseMessage::with_status(405, b"Method Not Allowed");
+const RESP_505: ResponseMessage = ResponseMessage::with_status(505, b"HTTP Version Not Supported");
+
 /// Represents a simplified HTTP request message.
 pub struct RequestMessage<'a> {
     pub method: Method<'a>,
@@ -31,13 +37,43 @@ impl<'a> RequestMessage<'a> {
     }
 
     /// Checks if the method is supported.
-    pub fn is_method_valid(&self) -> bool {
+    fn is_method_valid(&self) -> bool {
         METHODS.contains(&self.method)
     }
 
+    /// Checks if the path is valid.
+    fn is_path_valid(&self) -> bool {
+        self.path.starts_with(b"/")
+    }
+
     /// Checks if the HTTP version is supported.
-    pub fn is_http_valid(&self) -> bool {
+    fn is_http_valid(&self) -> bool {
         VERSIONS.contains(&self.http)
+    }
+
+    /// Checks if the RequestMessage is empty.
+    fn is_empty(&self) -> bool {
+        self.method.is_empty() && self.path.is_empty() && self.http.is_empty()
+    }
+
+    /// Checks if the RequestMessage is ASCII-compatible.
+    fn is_ascii(&self) -> bool {
+        self.method.is_ascii() && self.path.is_ascii() && self.http.is_ascii()
+    }
+
+    /// Returns an appropriate ResponseMessage.
+    pub fn response(&self) -> &ResponseMessage {
+        if self.is_empty() || !self.is_ascii() || !self.is_path_valid() {
+            &RESP_400
+        } else if !self.is_method_valid() {
+            &RESP_405
+        } else if !self.is_http_valid() {
+            &RESP_505
+        } else if self.path == b"/healthz" {
+            &RESP_200 // I would prefer 204 though
+        } else {
+            &RESP_404
+        }
     }
 }
 

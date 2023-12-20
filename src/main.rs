@@ -9,7 +9,7 @@ use async_std::net::{TcpListener, TcpStream};
 use async_std::prelude::*;
 use async_std::task;
 
-use crate::http::{RequestMessage, ResponseMessage};
+use crate::http::RequestMessage;
 
 const CRLF: &[u8; 2] = b"\r\n";
 const SEP: &[u8; 1] = b" ";
@@ -17,15 +17,8 @@ const SEP: &[u8; 1] = b" ";
 const REQUEST_CAP: usize = 65536;
 const BUFFER_LEN: usize = 64;
 
-const RESP_200: ResponseMessage = ResponseMessage::with_status(200, b"OK");
-const RESP_400: ResponseMessage = ResponseMessage::with_status(400, b"Bad Request");
-const RESP_404: ResponseMessage = ResponseMessage::with_status(404, b"Not Found");
-const RESP_405: ResponseMessage = ResponseMessage::with_status(405, b"Method Not Allowed");
-const RESP_414: ResponseMessage = ResponseMessage::with_status(414, b"URI Too Long");
-const RESP_505: ResponseMessage = ResponseMessage::with_status(505, b"HTTP Version Not Supported");
-
 async fn process(mut stream: TcpStream) {
-    let mut request: Vec<u8> = Vec::with_capacity(REQUEST_CAP);
+    let mut payload: Vec<u8> = Vec::with_capacity(REQUEST_CAP);
     let mut buf = [0_u8; BUFFER_LEN];
 
     loop {
@@ -35,11 +28,11 @@ async fn process(mut stream: TcpStream) {
                     size = pos;
                 }
 
-                if request.len() + size > REQUEST_CAP {
-                    size = REQUEST_CAP - request.len();
+                if payload.len() + size > REQUEST_CAP {
+                    size = REQUEST_CAP - payload.len();
                 }
 
-                request.extend_from_slice(&buf[..size]);
+                payload.extend_from_slice(&buf[..size]);
 
                 if size < BUFFER_LEN {
                     break;
@@ -49,23 +42,8 @@ async fn process(mut stream: TcpStream) {
         }
     }
 
-    let response = if !request.is_empty() && request.is_ascii() {
-        let message = RequestMessage::from(request.as_slice());
-
-        if !message.is_method_valid() {
-            &RESP_405
-        } else if message.path.is_empty() || message.http.is_empty() {
-            &RESP_414
-        } else if !message.is_http_valid() {
-            &RESP_505
-        } else if message.path == b"/healthz" {
-            &RESP_200 // I would prefer 204 though
-        } else {
-            &RESP_404
-        }
-    } else {
-        &RESP_400
-    };
+    let request = RequestMessage::from(payload.as_slice());
+    let response = request.response();
 
     for part in [
         response.http,
@@ -80,7 +58,7 @@ async fn process(mut stream: TcpStream) {
     ] {
         if let Some(e) = stream.write_all(part).await.err() {
             if e.kind() != ErrorKind::WouldBlock {
-                return;
+                break;
             }
         }
     }
