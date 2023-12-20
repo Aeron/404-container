@@ -11,8 +11,8 @@ use async_std::task;
 
 use crate::http::{RequestMessage, ResponseMessage};
 
-const CRLF: [u8; 2] = [13, 10];
-const SEP: [u8; 1] = [32];
+const CRLF: &[u8; 2] = b"\r\n";
+const SEP: &[u8; 1] = b" ";
 
 const REQUEST_CAP: usize = 65536;
 const BUFFER_LEN: usize = 64;
@@ -50,7 +50,7 @@ async fn process(mut stream: TcpStream) {
     }
 
     let response = if !request.is_empty() && request.is_ascii() {
-        let message = RequestMessage::from(&request);
+        let message = RequestMessage::from(request.as_slice());
 
         if !message.is_method_valid() {
             &RESP_405
@@ -58,7 +58,7 @@ async fn process(mut stream: TcpStream) {
             &RESP_414
         } else if !message.is_http_valid() {
             &RESP_505
-        } else if message.path.as_slice() == b"/healthz" {
+        } else if message.path == b"/healthz" {
             &RESP_200 // I would prefer 204 though
         } else {
             &RESP_404
@@ -69,14 +69,14 @@ async fn process(mut stream: TcpStream) {
 
     for part in [
         response.http,
-        &SEP,
+        SEP,
         response.code.to_string().as_bytes(),
-        &SEP,
+        SEP,
         response.desc,
-        &CRLF,
+        CRLF,
         response.headers.join(&CRLF[..]).as_slice(),
-        &CRLF,
-        &CRLF,
+        CRLF,
+        CRLF,
     ] {
         if let Some(e) = stream.write_all(part).await.err() {
             if e.kind() != ErrorKind::WouldBlock {
@@ -95,7 +95,7 @@ async fn main() {
         // NOTE: SIGHUP = 1, SIGINT = 2, SIGTERM = 15
         let mut signals = Signals::new([1, 2, 15]).unwrap();
 
-        while (signals.next().await).is_some() {
+        if (signals.next().await).is_some() {
             println!("Quitting");
             std::process::exit(0);
         }

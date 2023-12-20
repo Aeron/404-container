@@ -1,58 +1,65 @@
 use crate::{REQUEST_CAP, SEP};
 
-const VERSIONS: [&[u8]; 3] = [b"HTTP/1.0", b"HTTP/1.1", b"HTTP/2"];
-const METHODS: [&[u8]; 8] = [
+type Version<'v> = &'v [u8];
+type Method<'m> = &'m [u8];
+type Path<'p> = &'p [u8];
+
+const VERSIONS: [Version; 3] = [b"HTTP/1.0", b"HTTP/1.1", b"HTTP/2"];
+const METHODS: [Method; 8] = [
     b"GET", b"HEAD", b"POST", b"PUT", b"DELETE", b"OPTIONS", b"PATCH", b"TRACE",
 ];
 
-const METHOD_CAP: usize = 7;
-const PATH_CAP: usize = REQUEST_CAP;
 const VERSION_CAP: usize = 8;
+const METHOD_CAP: usize = 7;
+const PATH_CAP: usize = REQUEST_CAP - VERSION_CAP - METHOD_CAP - 2;
 
 /// Represents a simplified HTTP request message.
-pub struct RequestMessage {
-    pub method: Vec<u8>,
-    pub path: Vec<u8>,
-    pub http: Vec<u8>,
+pub struct RequestMessage<'a> {
+    pub method: Method<'a>,
+    pub path: Path<'a>,
+    pub http: Version<'a>,
 }
 
-impl RequestMessage {
+impl<'a> RequestMessage<'a> {
     /// Creates a new and empty RequestMessage.
     pub fn new() -> Self {
         Self {
-            method: Vec::with_capacity(METHOD_CAP),
-            path: Vec::with_capacity(PATH_CAP),
-            http: Vec::with_capacity(VERSION_CAP),
+            method: b"",
+            path: b"",
+            http: b"",
         }
     }
 
     /// Checks if the method is supported.
     pub fn is_method_valid(&self) -> bool {
-        matches!(self.method.as_slice(), m if METHODS.contains(&m))
+        METHODS.contains(&self.method)
     }
 
     /// Checks if the HTTP version is supported.
     pub fn is_http_valid(&self) -> bool {
-        matches!(self.http.as_slice(), v if VERSIONS.contains(&v))
+        VERSIONS.contains(&self.http)
     }
 }
 
-impl From<&Vec<u8>> for RequestMessage {
-    fn from(value: &Vec<u8>) -> Self {
+impl<'a> From<&'a [u8]> for RequestMessage<'a> {
+    fn from(value: &'a [u8]) -> Self {
         let mut result = RequestMessage::new();
 
         let slice: &[u8] = if value.len() > REQUEST_CAP {
             &value[..REQUEST_CAP]
         } else {
-            &value[..]
+            value
         };
 
-        for (i, v) in slice.splitn(3, |i| i == &SEP[0]).enumerate() {
-            match i {
-                0 => result.method.extend_from_slice(v),
-                1 => result.path.extend_from_slice(v),
-                2 => result.http.extend_from_slice(v),
-                _ => break,
+        for (num, src) in slice.splitn(3, |char| char == &SEP[0]).enumerate() {
+            match num {
+                0 if src.len() > METHOD_CAP => result.method = &src[..METHOD_CAP],
+                1 if src.len() > PATH_CAP => result.path = &src[..PATH_CAP],
+                2 if src.len() > VERSION_CAP => result.http = &src[..VERSION_CAP],
+                0 => result.method = src,
+                1 => result.path = src,
+                2 => result.http = src,
+                _ => unreachable!(),
             };
         }
 
@@ -62,7 +69,7 @@ impl From<&Vec<u8>> for RequestMessage {
 
 /// Represents a simplified HTTP (response) message.
 pub struct ResponseMessage<'a, 'b> {
-    pub http: &'a [u8],
+    pub http: Version<'a>,
     pub code: u16,
     pub desc: &'b [u8],
     pub headers: [&'b [u8]; 1],
@@ -88,38 +95,50 @@ mod tests {
 
     #[test]
     fn test_request_message_from() {
-        let data = b"GET /test HTTP/1.1".to_vec();
+        let data = b"GET /test HTTP/1.1";
 
-        let result = RequestMessage::from(&data);
+        let result = RequestMessage::from(data.as_slice());
 
         assert!(result.type_id() == TypeId::of::<RequestMessage>());
-        assert!(result.method.as_slice() == b"GET");
-        assert!(result.path.as_slice() == b"/test");
-        assert!(result.http.as_slice() == b"HTTP/1.1");
+        assert!(result.method == b"GET");
+        assert!(result.path == b"/test");
+        assert!(result.http == b"HTTP/1.1");
     }
 
     #[test]
     fn test_request_message_from_with_empty_http() {
-        let data = b"GET /too-long-message".to_vec();
+        let data = b"GET /too-long-path";
 
-        let result = RequestMessage::from(&data);
+        let result = RequestMessage::from(data.as_slice());
 
         assert!(result.type_id() == TypeId::of::<RequestMessage>());
-        assert!(result.method.as_slice() == b"GET");
-        assert!(result.path.as_slice() == b"/too-long-message");
+        assert!(result.method == b"GET");
+        assert!(result.path == b"/too-long-path");
         assert!(result.http.is_empty());
     }
 
     #[test]
     fn test_request_message_from_with_empty_path() {
-        let data = b"GET".to_vec();
+        let data = b"GET";
 
-        let result = RequestMessage::from(&data);
+        let result = RequestMessage::from(data.as_slice());
 
         assert!(result.type_id() == TypeId::of::<RequestMessage>());
-        assert!(result.method.as_slice() == b"GET");
+        assert!(result.method == b"GET");
         assert!(result.path.is_empty());
         assert!(result.http.is_empty());
+    }
+
+    #[test]
+    fn test_request_message_from_with_longer_method() {
+        let data = b"OPTIONSBUTLONGER /test HTTP/1.1";
+
+        let result = RequestMessage::from(data.as_slice());
+
+        assert!(result.type_id() == TypeId::of::<RequestMessage>());
+        assert!(result.method == b"OPTIONS");
+        assert!(result.path == b"/test");
+        assert!(result.http == b"HTTP/1.1");
     }
 
     #[test]
