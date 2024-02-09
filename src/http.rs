@@ -4,7 +4,7 @@ type Version<'v> = &'v [u8];
 type Method<'m> = &'m [u8];
 type Path<'p> = &'p [u8];
 
-const VERSIONS: [Version; 3] = [b"HTTP/1.0", b"HTTP/1.1", b"HTTP/2"];
+const VERSIONS: [Version; 2] = [b"HTTP/1.0", b"HTTP/1.1"];
 const METHODS: [Method; 8] = [
     b"GET", b"HEAD", b"POST", b"PUT", b"DELETE", b"OPTIONS", b"PATCH", b"TRACE",
 ];
