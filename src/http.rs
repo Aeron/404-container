@@ -19,6 +19,7 @@ const RESP_200: ResponseMessage = ResponseMessage::with_status(200, b"OK");
 const RESP_400: ResponseMessage = ResponseMessage::with_status(400, b"Bad Request");
 const RESP_404: ResponseMessage = ResponseMessage::with_status(404, b"Not Found");
 const RESP_405: ResponseMessage = ResponseMessage::with_status(405, b"Method Not Allowed");
+const RESP_414: ResponseMessage = ResponseMessage::with_status(414, b"URI Too Long");
 const RESP_505: ResponseMessage = ResponseMessage::with_status(505, b"HTTP Version Not Supported");
 
 /// Represents a simplified HTTP request message.
@@ -63,7 +64,11 @@ impl<'a> RequestMessage<'a> {
         } else if !self.is_method_valid() {
             &RESP_405
         } else if !self.is_http_valid() {
-            &RESP_505
+            if self.http.is_empty() {
+                &RESP_414
+            } else {
+                &RESP_505
+            }
         } else if self.path == b"/healthz" {
             &RESP_200 // I would prefer 204 though
         } else {
