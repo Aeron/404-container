@@ -173,6 +173,143 @@ mod tests {
     }
 
     #[test]
+    fn test_request_message_response_200() {
+        let data = &RequestMessage {
+            method: b"GET",
+            path: b"/healthz",
+            http: b"HTTP/1.1",
+        };
+
+        let result = data.response();
+
+        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
+        assert!(result.code == RESP_200.code);
+        assert!(result.desc == RESP_200.desc);
+        assert!(result.http == RESP_200.http);
+        assert!(result.headers == RESP_200.headers);
+    }
+
+    #[test]
+    fn test_request_message_response_404() {
+        let data = &RequestMessage {
+            method: b"GET",
+            path: b"/whatever",
+            http: b"HTTP/1.1",
+        };
+
+        let result = data.response();
+
+        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
+        assert!(result.code == RESP_404.code);
+        assert!(result.desc == RESP_404.desc);
+        assert!(result.http == RESP_404.http);
+        assert!(result.headers == RESP_404.headers);
+    }
+
+    #[test]
+    fn test_request_message_response_400_empty() {
+        let data = &RequestMessage {
+            method: b"",
+            path: b"",
+            http: b"",
+        };
+
+        let result = data.response();
+
+        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
+        assert!(result.code == RESP_400.code);
+        assert!(result.desc == RESP_400.desc);
+        assert!(result.http == RESP_400.http);
+        assert!(result.headers == RESP_400.headers);
+    }
+
+    #[test]
+    fn test_request_message_response_400_invalid_path() {
+        let data = &RequestMessage {
+            method: b"GET",
+            path: b"\\whatever",
+            http: b"HTTP/1.1",
+        };
+
+        let result = data.response();
+
+        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
+        assert!(result.code == RESP_400.code);
+        assert!(result.desc == RESP_400.desc);
+        assert!(result.http == RESP_400.http);
+        assert!(result.headers == RESP_400.headers);
+    }
+
+    #[test]
+    fn test_request_message_response_400_non_ascii() {
+        const SKULL: &[u8] = "💀".as_bytes();
+        let data = &RequestMessage {
+            method: b"GET",
+            path: SKULL,
+            http: b"HTTP/1.1",
+        };
+
+        let result = data.response();
+
+        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
+        assert!(result.code == RESP_400.code);
+        assert!(result.desc == RESP_400.desc);
+        assert!(result.http == RESP_400.http);
+        assert!(result.headers == RESP_400.headers);
+    }
+
+    #[test]
+    fn test_request_message_response_405() {
+        let data = &RequestMessage {
+            method: b"TEST",
+            path: b"/",
+            http: b"HTTP/1.1",
+        };
+
+        let result = data.response();
+
+        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
+        assert!(result.code == RESP_405.code);
+        assert!(result.desc == RESP_405.desc);
+        assert!(result.http == RESP_405.http);
+        assert!(result.headers == RESP_405.headers);
+    }
+
+    #[test]
+    fn test_request_message_response_414() {
+        let data = &RequestMessage {
+            method: b"GET",
+            path: b"/too-long-path",
+            http: b"",
+        };
+
+        let result = data.response();
+
+        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
+        assert!(result.code == RESP_414.code);
+        assert!(result.desc == RESP_414.desc);
+        assert!(result.http == RESP_414.http);
+        assert!(result.headers == RESP_414.headers);
+    }
+
+    #[test]
+    fn test_request_message_response_505() {
+        let data = &RequestMessage {
+            method: b"GET",
+            path: b"/",
+            http: b"HTTP/1.2",
+        };
+
+        let result = data.response();
+
+        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
+        assert!(result.code == RESP_505.code);
+        assert!(result.desc == RESP_505.desc);
+        assert!(result.http == RESP_505.http);
+        assert!(result.headers == RESP_505.headers);
+    }
+
+    #[test]
     fn test_response_message_with_status() {
         let result = ResponseMessage::with_status(204, b"No Content");
 
