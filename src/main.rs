@@ -4,7 +4,7 @@ use std::env;
 use std::net::{Ipv4Addr, Shutdown, SocketAddrV4};
 
 use async_signals::Signals;
-use async_std::io::{ErrorKind, ReadExt, WriteExt};
+use async_std::io::{ReadExt, WriteExt};
 use async_std::net::{TcpListener, TcpStream};
 use async_std::prelude::*;
 use async_std::task;
@@ -14,57 +14,43 @@ use crate::http::RequestMessage;
 const CRLF: &[u8; 2] = b"\r\n";
 const SEP: &[u8; 1] = b" ";
 
-const REQUEST_CAP: usize = 65536;
-const BUFFER_LEN: usize = 64;
+/// Processes TCP stream bytes as an HTTP request message, and responds accordingly.
+async fn process(mut stream: TcpStream) -> Result<(), std::io::Error> {
+    let mut buffer: Vec<u8> = Vec::with_capacity(RequestMessage::LIMIT);
 
-async fn process(mut stream: TcpStream) {
-    let mut payload: Vec<u8> = Vec::with_capacity(REQUEST_CAP);
-    let mut buf = [0_u8; BUFFER_LEN];
+    stream
+        .by_ref()
+        .bytes()
+        .map(|result| result.unwrap_or_default())
+        .take(RequestMessage::LIMIT)
+        .take_while(|byte| byte != &CRLF[0])
+        .enumerate()
+        .for_each(|(index, element)| buffer.insert(index, element))
+        .await;
 
-    loop {
-        match stream.read(&mut buf).await {
-            Ok(mut size) if size > 0 => {
-                if let Some(pos) = buf.iter().position(|i| i == &CRLF[0]) {
-                    size = pos;
-                }
-
-                if payload.len() + size > REQUEST_CAP {
-                    size = REQUEST_CAP - payload.len();
-                }
-
-                payload.extend_from_slice(&buf[..size]);
-
-                if size < BUFFER_LEN {
-                    break;
-                }
-            }
-            _ => break,
-        }
-    }
-
-    let request = RequestMessage::from(payload.as_slice());
+    let request = RequestMessage::from(buffer.as_slice());
     let response = request.response();
 
-    for part in [
-        response.http,
-        SEP,
-        response.code.to_string().as_bytes(),
-        SEP,
-        response.desc,
-        CRLF,
-        response.headers.join(&CRLF[..]).as_slice(),
-        CRLF,
-        CRLF,
-    ] {
-        if let Some(e) = stream.write_all(part).await.err() {
-            if e.kind() != ErrorKind::WouldBlock {
-                break;
-            }
-        }
-    }
+    stream
+        .write_all(
+            &[
+                response.http,
+                SEP,
+                response.code.to_string().as_bytes(),
+                SEP,
+                response.desc,
+                CRLF,
+                response.headers.join(&CRLF[..]).as_slice(),
+                CRLF,
+                CRLF,
+            ]
+            .concat(),
+        )
+        .await?;
+    stream.flush().await?;
+    stream.shutdown(Shutdown::Both)?;
 
-    stream.flush().await.ok();
-    stream.shutdown(Shutdown::Both).ok();
+    Ok(())
 }
 
 #[async_std::main]
@@ -73,7 +59,7 @@ async fn main() {
         // NOTE: SIGHUP = 1, SIGINT = 2, SIGTERM = 15
         let mut signals = Signals::new([1, 2, 15]).unwrap();
 
-        if (signals.next().await).is_some() {
+        if signals.next().await.is_some() {
             println!("Quitting");
             std::process::exit(0);
         }
@@ -90,15 +76,15 @@ async fn main() {
         Err(_) => 8080,
     };
 
-    let addr = SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port);
+    let addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port);
 
     let listener = match TcpListener::bind(addr).await {
         Ok(listener) => {
             println!("Listening on {addr}");
             listener
         }
-        Err(ref e) => {
-            eprintln!("Cannot listen on {addr}: {e}");
+        Err(ref err) => {
+            eprintln!("Cannot listen on {addr}: {err}");
             return;
         }
     };
@@ -112,6 +98,14 @@ async fn main() {
         };
         stream.set_nodelay(true).ok(); // we do not really care if it clicks or not
 
+        // NOTE: processing errors are not very helpful when running a release binary
+        #[cfg(debug_assertions)]
+        task::spawn(async {
+            process(stream)
+                .await
+                .map_err(|ref err| eprintln!("Processing error: {err}"))
+        });
+        #[cfg(not(debug_assertions))]
         task::spawn(process(stream));
     }
 }

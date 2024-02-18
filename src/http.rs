@@ -1,4 +1,6 @@
-use crate::{REQUEST_CAP, SEP};
+use std::io::Read;
+
+use crate::SEP;
 
 type Version<'v> = &'v [u8];
 type Method<'m> = &'m [u8];
@@ -9,9 +11,9 @@ const METHODS: [Method; 8] = [
     b"GET", b"HEAD", b"POST", b"PUT", b"DELETE", b"OPTIONS", b"PATCH", b"TRACE",
 ];
 
-const VERSION_CAP: usize = 8;
-const METHOD_CAP: usize = 7;
-const PATH_CAP: usize = REQUEST_CAP - VERSION_CAP - METHOD_CAP - 2;
+const VERSION_LIMIT: usize = 8;
+const METHOD_LIMIT: usize = 7;
+const PATH_LIMIT: usize = u16::MAX as usize + 1;
 
 const RESP_200: ResponseMessage = ResponseMessage::with_status(200, b"OK");
 const RESP_400: ResponseMessage = ResponseMessage::with_status(400, b"Bad Request");
@@ -27,14 +29,7 @@ pub struct RequestMessage<'a> {
 }
 
 impl<'a> RequestMessage<'a> {
-    /// Creates a new and empty RequestMessage.
-    pub fn new() -> Self {
-        Self {
-            method: b"",
-            path: b"",
-            http: b"",
-        }
-    }
+    pub const LIMIT: usize = METHOD_LIMIT + PATH_LIMIT + VERSION_LIMIT + 2;
 
     /// Checks if the method is supported.
     fn is_method_valid(&self) -> bool {
@@ -79,41 +74,36 @@ impl<'a> RequestMessage<'a> {
 
 impl<'a> From<&'a [u8]> for RequestMessage<'a> {
     fn from(value: &'a [u8]) -> Self {
-        let mut result = RequestMessage::new();
+        let (mut method, mut path, mut http): (&[u8], &[u8], &[u8]) = (b"", b"", b"");
 
-        let slice: &[u8] = if value.len() > REQUEST_CAP {
-            &value[..REQUEST_CAP]
-        } else {
-            value
-        };
+        value
+            .splitn(3, |char| char == &SEP[0])
+            .zip([METHOD_LIMIT, PATH_LIMIT, VERSION_LIMIT])
+            .map(|(source, limit)| {
+                if source.len() > limit {
+                    &source[..limit]
+                } else {
+                    source
+                }
+            })
+            .zip([method.by_ref(), path.by_ref(), http.by_ref()])
+            .for_each(|(source, target)| *target = source);
 
-        for (num, src) in slice.splitn(3, |char| char == &SEP[0]).enumerate() {
-            match num {
-                0 if src.len() > METHOD_CAP => result.method = &src[..METHOD_CAP],
-                1 if src.len() > PATH_CAP => result.path = &src[..PATH_CAP],
-                2 if src.len() > VERSION_CAP => result.http = &src[..VERSION_CAP],
-                0 => result.method = src,
-                1 => result.path = src,
-                2 => result.http = src,
-                _ => unreachable!(),
-            };
-        }
-
-        result
+        RequestMessage { method, path, http }
     }
 }
 
 /// Represents a simplified HTTP (response) message.
-pub struct ResponseMessage<'a, 'b> {
+pub struct ResponseMessage<'a> {
     pub http: Version<'a>,
     pub code: u16,
-    pub desc: &'b [u8],
-    pub headers: [&'b [u8]; 1],
+    pub desc: &'a [u8],
+    pub headers: [&'a [u8]; 1],
 }
 
-impl<'a, 'b> ResponseMessage<'a, 'b> {
+impl<'a> ResponseMessage<'a> {
     /// Creates a new ResponseMessage with a given status code and description.
-    pub const fn with_status(code: u16, desc: &'b [u8]) -> ResponseMessage<'a, 'b> {
+    pub const fn with_status(code: u16, desc: &'a [u8]) -> ResponseMessage<'a> {
         ResponseMessage {
             http: VERSIONS[1],
             code,
