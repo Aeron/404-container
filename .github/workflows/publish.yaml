@@ -17,7 +17,7 @@ jobs:
       GITHUB_REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/404
       DOCKER_REGISTRY_IMAGE: docker.io/aeron/404
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - id: recase
