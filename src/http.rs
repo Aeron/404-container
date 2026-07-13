@@ -1,5 +1,3 @@
-use std::io::Read;
-
 use crate::SEP;
 
 type Version<'v> = &'v [u8];
@@ -58,7 +56,7 @@ impl<'a> RequestMessage<'a> {
     }
 
     /// Returns an appropriate ResponseMessage.
-    pub fn response(&self) -> &ResponseMessage {
+    pub fn response(&self) -> &ResponseMessage<'_> {
         if self.is_empty() || !self.is_ascii() || !self.is_path_valid() {
             &RESP_400
         } else if !self.is_method_valid() {
@@ -79,20 +77,18 @@ impl<'a> RequestMessage<'a> {
 
 impl<'a> From<&'a [u8]> for RequestMessage<'a> {
     fn from(value: &'a [u8]) -> Self {
-        let (mut method, mut path, mut http): (&[u8], &[u8], &[u8]) = (b"", b"", b"");
+        fn truncate(source: &[u8], limit: usize) -> &[u8] {
+            if source.len() > limit {
+                &source[..limit]
+            } else {
+                source
+            }
+        }
 
-        value
-            .splitn(3, |char| char == &SEP[0])
-            .zip([METHOD_LIMIT, PATH_LIMIT, VERSION_LIMIT])
-            .map(|(source, limit)| {
-                if source.len() > limit {
-                    &source[..limit]
-                } else {
-                    source
-                }
-            })
-            .zip([method.by_ref(), path.by_ref(), http.by_ref()])
-            .for_each(|(source, target)| *target = source);
+        let mut parts = value.splitn(3, |byte| byte == &SEP[0]);
+        let method = truncate(parts.next().unwrap_or(b""), METHOD_LIMIT);
+        let path = truncate(parts.next().unwrap_or(b""), PATH_LIMIT);
+        let http = truncate(parts.next().unwrap_or(b""), VERSION_LIMIT);
 
         RequestMessage { method, path, http }
     }
@@ -120,8 +116,6 @@ impl<'a> ResponseMessage<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::any::{Any, TypeId};
-
     use super::*;
 
     #[test]
@@ -130,10 +124,9 @@ mod tests {
 
         let result = RequestMessage::from(data.as_slice());
 
-        assert!(result.type_id() == TypeId::of::<RequestMessage>());
-        assert!(result.method == b"GET");
-        assert!(result.path == b"/test");
-        assert!(result.http == b"HTTP/1.1");
+        assert_eq!(result.method, b"GET");
+        assert_eq!(result.path, b"/test");
+        assert_eq!(result.http, b"HTTP/1.1");
     }
 
     #[test]
@@ -142,9 +135,8 @@ mod tests {
 
         let result = RequestMessage::from(data.as_slice());
 
-        assert!(result.type_id() == TypeId::of::<RequestMessage>());
-        assert!(result.method == b"GET");
-        assert!(result.path == b"/too-long-path");
+        assert_eq!(result.method, b"GET");
+        assert_eq!(result.path, b"/too-long-path");
         assert!(result.http.is_empty());
     }
 
@@ -154,8 +146,7 @@ mod tests {
 
         let result = RequestMessage::from(data.as_slice());
 
-        assert!(result.type_id() == TypeId::of::<RequestMessage>());
-        assert!(result.method == b"GET");
+        assert_eq!(result.method, b"GET");
         assert!(result.path.is_empty());
         assert!(result.http.is_empty());
     }
@@ -166,10 +157,9 @@ mod tests {
 
         let result = RequestMessage::from(data.as_slice());
 
-        assert!(result.type_id() == TypeId::of::<RequestMessage>());
-        assert!(result.method == b"OPTIONS");
-        assert!(result.path == b"/test");
-        assert!(result.http == b"HTTP/1.1");
+        assert_eq!(result.method, b"OPTIONS");
+        assert_eq!(result.path, b"/test");
+        assert_eq!(result.http, b"HTTP/1.1");
     }
 
     #[test]
@@ -182,11 +172,10 @@ mod tests {
 
         let result = data.response();
 
-        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
-        assert!(result.code == RESP_200.code);
-        assert!(result.desc == RESP_200.desc);
-        assert!(result.http == RESP_200.http);
-        assert!(result.headers == RESP_200.headers);
+        assert_eq!(result.code, RESP_200.code);
+        assert_eq!(result.desc, RESP_200.desc);
+        assert_eq!(result.http, RESP_200.http);
+        assert_eq!(result.headers, RESP_200.headers);
     }
 
     #[test]
@@ -199,11 +188,10 @@ mod tests {
 
         let result = data.response();
 
-        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
-        assert!(result.code == RESP_404.code);
-        assert!(result.desc == RESP_404.desc);
-        assert!(result.http == RESP_404.http);
-        assert!(result.headers == RESP_404.headers);
+        assert_eq!(result.code, RESP_404.code);
+        assert_eq!(result.desc, RESP_404.desc);
+        assert_eq!(result.http, RESP_404.http);
+        assert_eq!(result.headers, RESP_404.headers);
     }
 
     #[test]
@@ -216,11 +204,10 @@ mod tests {
 
         let result = data.response();
 
-        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
-        assert!(result.code == RESP_400.code);
-        assert!(result.desc == RESP_400.desc);
-        assert!(result.http == RESP_400.http);
-        assert!(result.headers == RESP_400.headers);
+        assert_eq!(result.code, RESP_400.code);
+        assert_eq!(result.desc, RESP_400.desc);
+        assert_eq!(result.http, RESP_400.http);
+        assert_eq!(result.headers, RESP_400.headers);
     }
 
     #[test]
@@ -233,11 +220,10 @@ mod tests {
 
         let result = data.response();
 
-        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
-        assert!(result.code == RESP_400.code);
-        assert!(result.desc == RESP_400.desc);
-        assert!(result.http == RESP_400.http);
-        assert!(result.headers == RESP_400.headers);
+        assert_eq!(result.code, RESP_400.code);
+        assert_eq!(result.desc, RESP_400.desc);
+        assert_eq!(result.http, RESP_400.http);
+        assert_eq!(result.headers, RESP_400.headers);
     }
 
     #[test]
@@ -251,11 +237,10 @@ mod tests {
 
         let result = data.response();
 
-        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
-        assert!(result.code == RESP_400.code);
-        assert!(result.desc == RESP_400.desc);
-        assert!(result.http == RESP_400.http);
-        assert!(result.headers == RESP_400.headers);
+        assert_eq!(result.code, RESP_400.code);
+        assert_eq!(result.desc, RESP_400.desc);
+        assert_eq!(result.http, RESP_400.http);
+        assert_eq!(result.headers, RESP_400.headers);
     }
 
     #[test]
@@ -268,11 +253,10 @@ mod tests {
 
         let result = data.response();
 
-        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
-        assert!(result.code == RESP_405.code);
-        assert!(result.desc == RESP_405.desc);
-        assert!(result.http == RESP_405.http);
-        assert!(result.headers == RESP_405.headers);
+        assert_eq!(result.code, RESP_405.code);
+        assert_eq!(result.desc, RESP_405.desc);
+        assert_eq!(result.http, RESP_405.http);
+        assert_eq!(result.headers, RESP_405.headers);
     }
 
     #[test]
@@ -285,11 +269,10 @@ mod tests {
 
         let result = data.response();
 
-        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
-        assert!(result.code == RESP_414.code);
-        assert!(result.desc == RESP_414.desc);
-        assert!(result.http == RESP_414.http);
-        assert!(result.headers == RESP_414.headers);
+        assert_eq!(result.code, RESP_414.code);
+        assert_eq!(result.desc, RESP_414.desc);
+        assert_eq!(result.http, RESP_414.http);
+        assert_eq!(result.headers, RESP_414.headers);
     }
 
     #[test]
@@ -302,22 +285,20 @@ mod tests {
 
         let result = data.response();
 
-        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
-        assert!(result.code == RESP_505.code);
-        assert!(result.desc == RESP_505.desc);
-        assert!(result.http == RESP_505.http);
-        assert!(result.headers == RESP_505.headers);
+        assert_eq!(result.code, RESP_505.code);
+        assert_eq!(result.desc, RESP_505.desc);
+        assert_eq!(result.http, RESP_505.http);
+        assert_eq!(result.headers, RESP_505.headers);
     }
 
     #[test]
     fn test_response_message_with_status() {
         let result = ResponseMessage::with_status(204, b"No Content");
 
-        assert!(result.type_id() == TypeId::of::<ResponseMessage>());
-        assert!(result.http == b"HTTP/1.1");
-        assert!(result.code == 204);
-        assert!(result.desc == b"No Content");
-        assert!(result.headers[0] == b"Connection: close");
-        assert!(result.headers[1] == b"Content-Length: 0");
+        assert_eq!(result.http, b"HTTP/1.1");
+        assert_eq!(result.code, 204);
+        assert_eq!(result.desc, b"No Content");
+        assert_eq!(result.headers[0], b"Connection: close");
+        assert_eq!(result.headers[1], b"Content-Length: 0");
     }
 }
