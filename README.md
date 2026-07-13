@@ -36,9 +36,9 @@ docker pull ghcr.io/aeron/404
 Running a container is pretty straightforward:
 
 ```sh
-docker -d --restart unless-stopped --name http-404 \
+docker run -d --restart unless-stopped --name http-404 \
     --user=65534 \
-    -p 80/8080:tcp \
+    -p 80:8080/tcp \
     docker.io/aeron/404
 ```
 
@@ -48,10 +48,10 @@ However, you can also provide the `PORT` environment variable with a desired por
 number value. Just like so:
 
 ```sh
-docker -d --restart unless-stopped --name http-404 \
+docker run -d --restart unless-stopped --name http-404 \
     --user=65534 \
     -e PORT=1080 \
-    -p 80/1080:tcp \
+    -p 80:1080/tcp \
     docker.io/aeron/404
 ```
 
