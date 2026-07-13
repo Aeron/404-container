@@ -103,7 +103,7 @@ pub struct ResponseMessage<'a> {
     pub http: Version<'a>,
     pub code: u16,
     pub desc: &'a [u8],
-    pub headers: [&'a [u8]; 1],
+    pub headers: [&'a [u8]; 2],
 }
 
 impl<'a> ResponseMessage<'a> {
@@ -113,7 +113,7 @@ impl<'a> ResponseMessage<'a> {
             http: VERSIONS[1],
             code,
             desc,
-            headers: [b"Connection: close"],
+            headers: [b"Connection: close", b"Content-Length: 0"],
         }
     }
 }
@@ -318,5 +318,6 @@ mod tests {
         assert!(result.code == 204);
         assert!(result.desc == b"No Content");
         assert!(result.headers[0] == b"Connection: close");
+        assert!(result.headers[1] == b"Content-Length: 0");
     }
 }
