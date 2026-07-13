@@ -18,17 +18,12 @@ jobs:
       DOCKER_REGISTRY_IMAGE: docker.io/aeron/404
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - id: recase
         uses: ASzc/change-string-case-action@v8
         with:
           string: ${{ env.GITHUB_REGISTRY_IMAGE }}
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
-        # HACK: https://github.com/docker/setup-qemu-action/issues/60
-        with:
-          image: tonistiigi/binfmt:qemu-v6.2.0
       - name: Build Image
         id: build-image
         uses: redhat-actions/buildah-build@v2
