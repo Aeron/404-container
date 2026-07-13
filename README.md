@@ -1,7 +1,7 @@
 # 404 Container
 
 It’s a super-compact container with the sole purpose of responding with HTTP 404.
-And it’s written in Rust and `async-std`.
+And it’s written in Rust with no runtime dependencies.
 
 ## Motivation
 
